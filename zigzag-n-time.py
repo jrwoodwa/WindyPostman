@@ -11,7 +11,7 @@ Features:
 - Handles zig-zag arcs and time window constraints.
 - Prints solution details.
 
-Author: Your Name
+Author: Andreas Feldmann
 Date: 2025-05-30
 
 Requirements:
