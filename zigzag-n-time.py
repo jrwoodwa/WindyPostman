@@ -29,7 +29,7 @@ for a in W:
 depot = 0
 
 
-def compute_required_shortest_paths(G, R, depot):
+def compute_required_shortest_paths(G, R, orig_depot, art_depot):
     """
     Computes all shortest paths and distances between required vertices and depot.
     Additionally, for each arc pq of the input graph, stores a list of arcs uv such that pq lies on the shortest_path from u to v.
@@ -46,8 +46,8 @@ def compute_required_shortest_paths(G, R, depot):
         arc_to_uv: dict (p, q) -> list of (u, v) such that (p, q) is on the shortest path from u to v
     """
 
-    # Find required vertices (incident to R)
-    required_vertices = set([depot])  # start with depot 
+    # Find required vertices (incident to R and depots)
+    required_vertices = set([art_depot, orig_depot])  # start with depots
     for (u, v) in R:
         required_vertices.add(u)
         required_vertices.add(v)
@@ -74,9 +74,10 @@ def compute_required_shortest_paths(G, R, depot):
                     shortest_distances[(u, v)] = float('inf')
     return required_vertices, shortest_paths, shortest_distances, arc_to_uv
 
-def create_digraph(V, A, t):
+def create_digraph(V, A, orig_depot, t):
     """
     Creates a networkx.DiGraph from the given vertices, arcs, and travel times.
+    We add a artificial depot node so that all incident arcs are non-required. This is needed for the objective function to work correctly.
 
     Parameters:
         V: list of vertices
@@ -90,9 +91,19 @@ def create_digraph(V, A, t):
     G.add_nodes_from(V)
     for (u, v) in A:
         G.add_edge(u, v, weight=t[(u, v)])
-    return G
 
-def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distances, arc_to_uv, R, Z, s1, s2, depot, W, T, t):
+    # Add depot node
+    art_depot = min(V) - 1  # use a new node that is not in V
+    G.add_node(art_depot)
+    G.add_edge(art_depot, orig_depot, weight=0)  # zero travel time from artificial depot to original depot
+    G.add_edge(orig_depot, art_depot, weight=0)
+
+    t[(art_depot, orig_depot)] = 0  # add travel time for the artificial depot to original depot
+    t[(orig_depot, art_depot)] = 0  # add travel time for the original depot to artificial depot
+            
+    return G, art_depot
+
+def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distances, arc_to_uv, R, Z, s1, s2, orig_depot, art_depot, W, T, t):
     """
     Solves the metric closure MIP using Google OR-Tools, including time window variables and constraints.
 
@@ -124,11 +135,11 @@ def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distanc
     w = { (u, v): solver.NumVar(0, solver.infinity(), f'w_{u}_{v}') for (u, v) in C }
 
     # Objective
-    travel_cost = solver.Sum(shortest_distances[(u, v)] * f[(u, v)] for (u, v) in C)
-    service_cost = solver.Sum(s1[a] * r[a] for a in R)
-    zigzag_cost = solver.Sum(s2[a] * z[a] for a in Z)
-    obj = travel_cost + service_cost + zigzag_cost
-    solver.Minimize(obj)
+    # travel_cost = solver.Sum(shortest_distances[(u, v)] * f[(u, v)] for (u, v) in C)
+    # service_cost = solver.Sum(s1[a] * r[a] for a in R)
+    # zigzag_cost = solver.Sum(s2[a] * z[a] for a in Z)
+    # obj = travel_cost + service_cost + zigzag_cost
+    solver.Minimize(w[(orig_depot, art_depot)])  # minimize last time window variable, which is the arrival time at the original depot
 
     # 1. Flow conservation in closure
     for u in required_vertices:
@@ -136,7 +147,13 @@ def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distanc
             solver.Sum(f[(u, v)] for v in required_vertices if v != u) ==
             solver.Sum(f[(v, u)] for v in required_vertices if v != u)
         )
-    solver.Add(solver.Sum(f[(depot, v)] for v in required_vertices if v != depot) >= 1)
+    # flow to airtificial depot:
+    # this means that the flow goes through the original depot and
+    # it let's us define the objective correctly
+    solver.Add(f[(orig_depot, art_depot)] == 1)
+    for u in required_vertices:
+        if u != orig_depot and u != art_depot:
+            solver.Add(f[(u, art_depot)] == 0)
 
     # 2. Demand satisfaction for required arcs
     for (p, q) in R:
@@ -190,7 +207,7 @@ def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distanc
 
     # Time propagation constraints
     for (u, v) in C:
-        if u == depot: # the arrival time of the first arc is 0
+        if u == art_depot: # the arrival time of the first arc is 0
             solver.Add(w[(u, v)] == 0)
             continue
         for v_prime in required_vertices:
@@ -225,15 +242,15 @@ def solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distanc
         for (p, q) in Z:
             if z[(p, q)].solution_value() > 0.5:
                 print(f"z[{p},{q}] = 1")
-        print("Objective value:", solver.Objective().Value())
+        print("Objective value:", round(solver.Objective().Value()))
     else:
         print("No optimal solution found.")
 
 def main():
     # Build graph and data
-    G = create_digraph(V, A, t)
-    required_vertices, shortest_paths, shortest_distances, arc_to_uv = compute_required_shortest_paths(G, R, depot)
-    solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distances, arc_to_uv, R, Z, s1, s2, depot, W, T, t)
+    G, art_depot = create_digraph(V, A, depot, t)
+    required_vertices, shortest_paths, shortest_distances, arc_to_uv = compute_required_shortest_paths(G, R, depot, art_depot)
+    solve_metric_closure_mip(required_vertices, shortest_paths, shortest_distances, arc_to_uv, R, Z, s1, s2, depot, art_depot, W, T, t)
 
 if __name__ == "__main__":
     main()
