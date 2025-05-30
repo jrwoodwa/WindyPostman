@@ -1,5 +1,5 @@
 # Arc-Based Routing with Real Instances
-This repo explores arc-based routing problems (ARP) starting from a small, real-world instance near me—based on the "John and Andreas" rural delivery example in Zhang & Tang (2017).
+This repo explores arc-based routing problems (ARP) starting from a small, real-world instance near me—based on a rural delivery formulation in Zhang & Tang (2017).
 https://rui-zhang.org/wp-content/uploads/2017/09/The-windy-rural-postman-problem-with-a-time-dependent-zigzag-option.pdf
 
 ## Why Arc Routing?
