@@ -36,6 +36,8 @@ from typing import List, Tuple, Dict, Set, Any
 import networkx as nx
 from ortools.linear_solver import pywraplp
 
+import os
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -177,14 +179,23 @@ class Solver:
         self.t = t
         self.verbose = verbose
 
-    def solve_metric_closure_mip(self) -> None:
+    def solve_metric_closure_mip(self, solve_with = "SCIP") -> None:
         """
         Solves the metric closure MIP using Google OR-Tools, including time window variables and constraints.
         Prints the solution if found.
         """
-        solver = pywraplp.Solver.CreateSolver("SCIP")
+        solver = pywraplp.Solver.CreateSolver(solve_with)
         if not solver:
             raise Exception("Could not create solver.")
+
+        ## JW: Added multithreading and time limits
+        num_cpus = os.cpu_count() or 1
+        solver.SetNumThreads(num_cpus)
+
+        # Set time limit to 60 seconds (60000 milliseconds)
+        solver.set_time_limit(60000)
+
+        solver.EnableOutput() # debugging
 
         C = [(u, v) for u in self.required_vertices for v in self.required_vertices if u != v]
 
@@ -270,10 +281,20 @@ class Solver:
                         sum_prev += self.s2[arc] * z[arc]
                 solver.Add(w[(u, v)] >= w[(v_prime, u)] + sum_prev - M * (1 - f[(u, v)]))
 
-        # Solve
+        ## JW -- added a few changes for time limits, and also non-optimal answers
+        
+        # Solve        
         status = solver.Solve()
+        
         if status == pywraplp.Solver.OPTIMAL:
             logger.info("Optimal solution found:")
+        elif status == pywraplp.Solver.FEASIBLE:
+            logger.warning("Feasible solution found (not proven optimal):")
+        else:
+            logger.error("No solution found.")
+        
+        # Try to print solution details if feasible or optimal
+        if status in [pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE]:
             arcs_with_times = [((u, v), w[(u, v)].solution_value()) for (u, v) in C if f[(u, v)].solution_value() > 0.5]
             arcs_with_times.sort(key=lambda x: x[1])
             for (u, v), w_val in arcs_with_times:
@@ -286,8 +307,7 @@ class Solver:
                 if z[(p, q)].solution_value() > 0.5:
                     logger.info(f"z[{p},{q}] = 1")
             logger.info(f"Objective value: {round(solver.Objective().Value())}")
-        else:
-            logger.error("No optimal solution found.")
+
 
 
 class WindyPostmanProblem:
@@ -322,6 +342,8 @@ class WindyPostmanProblem:
     def run(self) -> None:
         logger.info("Building graph and data...")
         G, art_depot = self.graph_builder.create_digraph()
+
+        logger.info("Computing Shortest Paths...")
         required_vertices, shortest_paths, shortest_distances, arc_to_uv = ShortestPathComputer(
             G, self.R, self.depot, art_depot
         ).compute_required_shortest_paths()
@@ -342,7 +364,7 @@ class WindyPostmanProblem:
             self.T,
             self.t,
         )
-        self.solver.solve_metric_closure_mip()
+        self.solver.solve_metric_closure_mip(solve_with="SCIP") # HiGHS # SCIP
 
 def solve_windy_postman(
     V: List[int],
