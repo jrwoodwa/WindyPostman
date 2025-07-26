@@ -2,6 +2,8 @@
 
 ## Example screenshot of problem instance
 ![Arc Routing Screenshot](screenshot_of_ARP.png)
+<img width="483" height="539" alt="image" src="https://github.com/user-attachments/assets/97211267-254f-4185-8a88-58abac8c5e74" />
+
 
 This repo explores arc-based routing problems (ARP) starting from a small, real-world instance near us—based on a rural delivery formulation in Zhang & Tang (2017).
 https://rui-zhang.org/wp-content/uploads/2017/09/The-windy-rural-postman-problem-with-a-time-dependent-zigzag-option.pdf
