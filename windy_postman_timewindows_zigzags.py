@@ -189,13 +189,15 @@ class Solver:
             raise Exception("Could not create solver.")
 
         ## JW: Added multithreading and time limits
-        num_cpus = os.cpu_count() or 1
+        num_cpus = 1 #os.cpu_count() or 1 # For now
         solver.SetNumThreads(num_cpus)
 
         # Set time limit to 60 seconds (60000 milliseconds)
-        solver.set_time_limit(60000)
+        solver.set_time_limit(10000)
 
-        solver.EnableOutput() # debugging
+        print(f"DEBUG: Time Limit of {10000/1000} seconds; {num_cpus} Thread/s")
+
+        #solver.EnableOutput() # debugging
 
         C = [(u, v) for u in self.required_vertices for v in self.required_vertices if u != v]
 
@@ -208,6 +210,8 @@ class Solver:
         # Objective: minimize arrival time at original depot
         solver.Minimize(w[(self.orig_depot, self.art_depot)])
 
+        print("DEBUG: Adding flow conservation constraints")
+
         # 1. Flow conservation in closure
         for u in self.required_vertices:
             solver.Add(
@@ -219,6 +223,7 @@ class Solver:
             if u != self.orig_depot and u != self.art_depot:
                 solver.Add(f[(u, self.art_depot)] == 0)
 
+        print("DEBUG: Adding Demand satisfaction for required arcs constraints")
         # 2. Demand satisfaction for required arcs
         for (p, q) in self.R:
             if (p, q) in self.Z:
@@ -233,6 +238,7 @@ class Solver:
             qp = (q, p)
             solver.Add(r[pq] + r[qp] + 2 * z[pq] + 2 * z[qp] == 2)
 
+        print("DEBUG: Adding Time window constraints")
         # --- Time window constraints ---
         for (p, q) in self.W:
             for (u, v) in self.arc_to_uv.get((p, q), []):
@@ -248,6 +254,7 @@ class Solver:
                         sum_before += self.s2[arc] * z[arc]
                 solver.Add(w[(u, v)] <= self.T[(p, q)] - sum_before)
 
+        print("DEBUG: Adding big-M constraints")
         # Compute big-M
         M = 0
         for (u, v) in C:
@@ -262,6 +269,7 @@ class Solver:
                 if arc in self.s2:
                     M += self.s2[arc]
 
+        print("DEBUG: Adding Time propagation constraints")
         # Time propagation constraints
         for (u, v) in C:
             if u == self.art_depot:
@@ -282,7 +290,8 @@ class Solver:
                 solver.Add(w[(u, v)] >= w[(v_prime, u)] + sum_prev - M * (1 - f[(u, v)]))
 
         ## JW -- added a few changes for time limits, and also non-optimal answers
-        
+
+        print("DEBUG: Solving")
         # Solve        
         status = solver.Solve()
         
@@ -364,7 +373,9 @@ class WindyPostmanProblem:
             self.T,
             self.t,
         )
-        self.solver.solve_metric_closure_mip(solve_with="SCIP") # HiGHS # SCIP
+        solver_to_use = "SCIP"
+        print(f'Using solver: {solver_to_use}')
+        self.solver.solve_metric_closure_mip(solve_with=solver_to_use) # HiGHS # SCIP # CBC
 
 def solve_windy_postman(
     V: List[int],
